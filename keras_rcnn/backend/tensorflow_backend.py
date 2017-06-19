@@ -1,5 +1,4 @@
 import itertools
-
 import keras.backend
 import numpy
 import tensorflow
@@ -46,11 +45,11 @@ def filter_boxes(proposals, minimum):
     ws = proposals[:, 2] - proposals[:, 0] + 1
     hs = proposals[:, 3] - proposals[:, 1] + 1
 
-    indicies = tensorflow.where((ws >= minimum) & (hs >= minimum))
+    indicies = numpy.where((ws >= minimum) & (hs >= minimum))#tensorflow.where((ws >= minimum) & (hs >= minimum))
 
-    indicies = keras.backend.flatten(indicies)
+    indicies = numpy.ravel(indicies)#keras.backend.flatten(indicies)
 
-    return keras.backend.cast(indicies, tensorflow.int32)
+    return indicies#keras.backend.cast(indicies, tensorflow.int32)
 
 
 def non_maximum_suppression(boxes, scores, maximum, threshold=0.5):
@@ -153,12 +152,12 @@ def overlapping(y_true, y_pred, inds_inside):
 
     :return:
     """
-    overlaps = bbox_overlaps(y_pred, y_true[:, :4])
+    overlaps = overlap(y_pred, y_true[:, :4])
 
     argmax_overlaps_inds = overlaps.argmax(axis=1)
     gt_argmax_overlaps_inds = overlaps.argmax(axis=0)
 
-    max_overlaps = overlaps[keras.backend.arange(len(inds_inside)), argmax_overlaps_inds]
+    max_overlaps = overlaps[numpy.arange(len(inds_inside)),argmax_overlaps_inds]#overlaps[keras.backend.arange(len(inds_inside)), argmax_overlaps_inds]
 
     return argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds
 
@@ -188,14 +187,19 @@ def subsample_positive_labels(labels):
     """
     num_fg = int(RPN_FG_FRACTION * RPN_BATCHSIZE)
 
-    fg_inds = tensorflow.where(labels == 1)[0]
-
+    fg_inds = numpy.where(labels == 1)[0]# tensorflow.where(labels == 1)[0]
+    '''
     if len(fg_inds) > num_fg:
         size = int(len(fg_inds) - num_fg)
 
         elems = tensorflow.gather(fg_inds, tensorflow.multinomial(tensorflow.ones(len(fg_inds))[:, tensorflow.newaxis], size))
         numpy.random.choice(fg_inds, size, replace=False)
-        labels[elems] = -1 #TODO: change item assignment
+        labels[elems] = -1 
+    '''
+    if len(fg_inds) > num_fg:
+        size = int(len(fg_inds) - num_fg)
+
+        labels[numpy.random.choice(fg_inds, size, replace=False)] = -1
 
     return labels
 
@@ -207,16 +211,21 @@ def subsample_negative_labels(labels):
 
     :return:
     """
-    num_bg = RPN_BATCHSIZE - tensorflow.reduce_sum(labels[labels == 1])
+    num_bg = RPN_BATCHSIZE - numpy.sum(labels[labels == 1])# tensorflow.reduce_sum(labels[labels == 1])
 
-    bg_inds = tensorflow.where(labels == 0)[0]
-
+    bg_inds = numpy.where(labels == 0)[0] #tensorflow.where(labels == 0)[0]
+    '''
     if len(bg_inds) > num_bg:
         size = bg_inds.shape[0] - num_bg
 
         elems = tensorflow.gather(bg_inds, tensorflow.multinomial(tensorflow.ones(len(bg_inds))[:, tensorflow.newaxis], size))
         numpy.random.choice(bg_inds, size, replace=False)
         labels[elems] = -1
+    '''
+    if len(bg_inds) > num_bg:
+        size = int(len(bg_inds) - num_bg)
+
+        labels[numpy.random.choice(bg_inds, size, replace=False)] = -1
 
     return labels
 
@@ -233,7 +242,7 @@ def label(y_true, y_pred, inds_inside):
     :return:
     """
     # assign ignore labels first
-    labels = tensorflow.ones((len(inds_inside),), dtype=tensorflow.int32) * -1
+    labels = numpy.ones((len(inds_inside),),) * -1 # tensorflow.ones((len(inds_inside),), dtype=tensorflow.int32) * -1
 
     argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds = overlapping(y_true, y_pred, inds_inside)
 
@@ -256,14 +265,14 @@ def label(y_true, y_pred, inds_inside):
 
 def shift(shape, stride):
 
-    shift_x = keras.backend.arange(0, shape[0]) * stride
-    shift_y = keras.backend.arange(0, shape[1]) * stride
+    shift_x = numpy.arange(0, shape[0]) * stride#keras.backend.arange(0, shape[0]) * stride
+    shift_y = numpy.arange(0, shape[1]) * stride#keras.backend.arange(0, shape[1]) * stride
 
-    shift_x, shift_y = tensorflow.meshgrid(shift_x, shift_y)
+    shift_x, shift_y = numpy.meshgrid(shift_x, shift_y) #tensorflow.meshgrid(shift_x, shift_y)
 
-    shifts = tensorflow.concat((tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1]), tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1])), axis = 0)
-    shifts = tensorflow.transpose(shifts)
-
+    #shifts = tensorflow.concat((tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1]), tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1])), axis = 0)
+    #shifts = tensorflow.transpose(shifts)
+    shifts = numpy.vstack((shift_x.ravel(), shift_y.ravel(), shift_x.ravel(), shift_y.ravel())).transpose()
     anchors = keras_rcnn.backend.anchor()
 
     # Create all bbox
@@ -271,9 +280,9 @@ def shift(shape, stride):
 
     k = shifts.shape[0]  # number of base points = feat_h * feat_w
 
-    bbox = tensorflow.reshape(anchors, [1, number_of_anchors, 4]) + tensorflow.reshape(shifts, [k, 1, 4])
+    bbox = anchors.reshape(1, number_of_anchors, 4) + shifts.reshape(k, 1, 4) #tensorflow.reshape(anchors, [1, number_of_anchors, 4]) + tensorflow.reshape(shifts, [k, 1, 4])
 
-    bbox = tensorflow.reshape(bbox, [k * number_of_anchors, 4])
+    bbox = bbox.reshape(k * number_of_anchors, 4) #tensorflow.reshape(bbox, [k * number_of_anchors, 4])
 
     return bbox
 
@@ -288,7 +297,7 @@ def inside_image(y_pred, img_info):
 
     :return:
     """
-    inds_inside = tensorflow.where(
+    inds_inside = numpy.where(#tensorflow.where(
         (y_pred[:, 0] >= 0) &
         (y_pred[:, 1] >= 0) &
         (y_pred[:, 2] < img_info[1]) &  # width
@@ -296,3 +305,4 @@ def inside_image(y_pred, img_info):
     )[0]
 
     return inds_inside, y_pred[inds_inside]
+

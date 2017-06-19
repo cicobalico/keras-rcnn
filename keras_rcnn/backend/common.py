@@ -7,16 +7,16 @@ def anchor(base_size=16, ratios=None, scales=None):
     Generates a regular grid of multi-aspect and multi-scale anchor boxes.
     """
     if ratios is None:
-        ratios = keras.backend.variable(numpy.array([0.5, 1, 2]))
+        ratios = numpy.array([0.5, 1, 2]) #keras.backend.variable(numpy.array([0.5, 1, 2]))
 
     if scales is None:
-        scales = keras.backend.variable(numpy.array([8, 16, 32]))
+        scales = numpy.array([8, 16, 32]) #keras.backend.variable(numpy.array([8, 16, 32]))
 
-    base_anchor = keras.backend.variable(numpy.array([1, 1, base_size, base_size]) - 1)
+    base_anchor = numpy.array([1, 1, base_size, base_size]) - 1#keras.backend.variable(numpy.array([1, 1, base_size, base_size]) - 1)
 
     ratio_anchors = _ratio_enum(base_anchor, ratios)
 
-    anchors = keras.backend.concatenate([_scale_enum(ratio_anchors[i, :], scales) for i in range(ratio_anchors.shape[0])], axis = 0)
+    anchors = numpy.concatenate([_scale_enum(ratio_anchors[i, :], scales) for i in range(ratio_anchors.shape[0])], axis = 0)#keras.backend.concatenate([_scale_enum(ratio_anchors[i, :], scales) for i in range(ratio_anchors.shape[0])], axis = 0)
 
     return anchors
 
@@ -64,6 +64,7 @@ def _mkanchors(ws, hs, x_ctr, y_ctr):
     Given a vector of widths (ws) and heights (hs) around a center
     (x_ctr, y_ctr), output a set of anchors (windows).
     """
+    '''
     ws = keras.backend.expand_dims(ws, axis=1)
     hs = keras.backend.expand_dims(hs, axis=1)
 
@@ -71,6 +72,13 @@ def _mkanchors(ws, hs, x_ctr, y_ctr):
                             y_ctr - 0.5 * (hs - 1),
                             x_ctr + 0.5 * (ws - 1),
                             y_ctr + 0.5 * (hs - 1)), axis = 1)
+    '''
+    ws = ws[:, numpy.newaxis]
+    hs = hs[:, numpy.newaxis]
+    anchors = numpy.hstack((x_ctr - 0.5 * (ws - 1),
+                            y_ctr - 0.5 * (hs - 1),
+                            x_ctr + 0.5 * (ws - 1),
+                            y_ctr + 0.5 * (hs - 1)))
     return anchors
 
 
@@ -82,8 +90,8 @@ def _ratio_enum(anchor, ratios):
     w, h, x_ctr, y_ctr = _whctrs(anchor)
     size = w * h
     size_ratios = size / ratios
-    ws = keras.backend.round(keras.backend.sqrt(size_ratios))
-    hs = keras.backend.round(ws * ratios)
+    ws = numpy.round(numpy.sqrt(size_ratios))#keras.backend.round(keras.backend.sqrt(size_ratios))
+    hs = numpy.round(ws * ratios) #keras.backend.round(ws * ratios)
     anchors = _mkanchors(ws, hs, x_ctr, y_ctr)
     return anchors
 

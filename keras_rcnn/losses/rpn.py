@@ -44,14 +44,14 @@ def proposal(anchors, *args, **kwargs):
         y_true_regression = numpy.zeros((1, features[0], features[1], anchors*4*2))
 
         for ii in numpy.arange(len(inds_inside)):
-            i = inds_inside[ii] // (9*14)
+            i = inds_inside[ii] // (9 * 14)
             j = (inds_inside[ii] // 9) % 14
-            a = inds_inside[ii] % 9
-            y_true_classification[:, i, j, a * gt_classification[ii]] = gt_classification[ii]
-            y_true_classification[:, i, j, anchors + a * gt_classification[ii]] = gt_classification[ii]
-            y_true_regression[:, i, j, a * gt_classification[ii] * 4 : (a * gt_classification[ii] + 1) * 4] = gt_classification[ii]
-            y_true_regression[:, i, j, anchors * 4 + a * gt_classification[ii] * 4 : anchors * 4 + (a * gt_classification[ii] + 1) * 4] = gt_regression[ii, :]
-
+            a = inds_inside[ii] % 9 
+            gt_class = int(gt_classification[ii])
+            y_true_classification[:, i, j, a * gt_class] = gt_class
+            y_true_classification[:, i, j, anchors + a * gt_class] = gt_class
+            y_true_regression[:, i, j, a * gt_class * 4 : (a * gt_class + 1) * 4] = gt_class
+            y_true_regression[:, i, j, anchors * 4 + a * gt_class * 4 : anchors * 4 + (a * gt_class + 1) * 4] = gt_regression[ii, :]
         classification = _classification(anchors=anchors)(keras.backend.variable(y_true_classification), keras.backend.variable(y_pred_classification))
 
         regression = _regression(anchors=anchors)(keras.backend.variable(y_true_regression), keras.backend.variable(y_pred_regression))
