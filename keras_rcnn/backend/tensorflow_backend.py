@@ -3,9 +3,13 @@ import itertools
 import keras.backend
 import numpy
 import tensorflow
-
 import keras_rcnn.backend
 
+
+RPN_NEGATIVE_OVERLAP = 0.3
+RPN_POSITIVE_OVERLAP = 0.7
+RPN_FG_FRACTION = 0.5
+RPN_BATCHSIZE = 256
 
 def bbox_transform_inv(shifted, boxes):
     if boxes.shape[0] == 0:
@@ -137,3 +141,158 @@ def overlap(a, b):
                 overlaps[n, k] = iw * ih / ua
 
     return overlaps
+
+
+def overlapping(y_true, y_pred, inds_inside):
+    """
+    overlaps between the anchors and the gt boxes
+
+    :param y_pred: anchors
+    :param y_true:
+    :param inds_inside:
+
+    :return:
+    """
+    overlaps = bbox_overlaps(y_pred, y_true[:, :4])
+
+    argmax_overlaps_inds = overlaps.argmax(axis=1)
+    gt_argmax_overlaps_inds = overlaps.argmax(axis=0)
+
+    max_overlaps = overlaps[keras.backend.arange(len(inds_inside)), argmax_overlaps_inds]
+
+    return argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds
+
+
+def balance(labels):
+    """
+    balance labels by setting some to -1
+    :param labels: array of labels (1 is positive, 0 is negative, -1 is dont care)
+
+    :return: array of labels
+    """
+    # subsample positive labels if we have too many
+    labels = subsample_positive_labels(labels)
+
+    # subsample negative labels if we have too many
+    labels = subsample_negative_labels(labels)
+
+    return labels
+
+
+def subsample_positive_labels(labels):
+    """
+    subsample positive labels if we have too many
+    :param labels: array of labels (1 is positive, 0 is negative, -1 is dont care)
+
+    :return:
+    """
+    num_fg = int(RPN_FG_FRACTION * RPN_BATCHSIZE)
+
+    fg_inds = tensorflow.where(labels == 1)[0]
+
+    if len(fg_inds) > num_fg:
+        size = int(len(fg_inds) - num_fg)
+
+        elems = tensorflow.gather(fg_inds, tensorflow.multinomial(tensorflow.ones(len(fg_inds))[:, tensorflow.newaxis], size))
+        numpy.random.choice(fg_inds, size, replace=False)
+        labels[elems] = -1 #TODO: change item assignment
+
+    return labels
+
+
+def subsample_negative_labels(labels):
+    """
+    subsample negative labels if we have too many
+    :param labels: array of labels (1 is positive, 0 is negative, -1 is dont care)
+
+    :return:
+    """
+    num_bg = RPN_BATCHSIZE - tensorflow.reduce_sum(labels[labels == 1])
+
+    bg_inds = tensorflow.where(labels == 0)[0]
+
+    if len(bg_inds) > num_bg:
+        size = bg_inds.shape[0] - num_bg
+
+        elems = tensorflow.gather(bg_inds, tensorflow.multinomial(tensorflow.ones(len(bg_inds))[:, tensorflow.newaxis], size))
+        numpy.random.choice(bg_inds, size, replace=False)
+        labels[elems] = -1
+
+    return labels
+
+
+def label(y_true, y_pred, inds_inside):
+    """
+    Create bbox labels.
+    label: 1 is positive, 0 is negative, -1 is dont care
+
+    :param inds_inside:
+    :param y_pred: anchors
+    :param y_true:
+
+    :return:
+    """
+    # assign ignore labels first
+    labels = tensorflow.ones((len(inds_inside),), dtype=tensorflow.int32) * -1
+
+    argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds = overlapping(y_true, y_pred, inds_inside)
+
+    # assign bg labels first so that positive labels can clobber them
+    labels[max_overlaps < RPN_NEGATIVE_OVERLAP] = 0
+
+    # fg label: for each gt, anchor with highest overlap
+    labels[gt_argmax_overlaps_inds] = 1
+
+    # fg label: above threshold IOU
+    labels[max_overlaps >= RPN_POSITIVE_OVERLAP] = 1
+
+    # assign bg labels last so that negative labels can clobber positives
+    labels[max_overlaps < RPN_NEGATIVE_OVERLAP] = 0
+
+    labels = balance(labels)
+
+    return argmax_overlaps_inds, labels
+
+
+def shift(shape, stride):
+
+    shift_x = keras.backend.arange(0, shape[0]) * stride
+    shift_y = keras.backend.arange(0, shape[1]) * stride
+
+    shift_x, shift_y = tensorflow.meshgrid(shift_x, shift_y)
+
+    shifts = tensorflow.concat((tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1]), tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1])), axis = 0)
+    shifts = tensorflow.transpose(shifts)
+
+    anchors = keras_rcnn.backend.anchor()
+
+    # Create all bbox
+    number_of_anchors = anchors.shape[0]
+
+    k = shifts.shape[0]  # number of base points = feat_h * feat_w
+
+    bbox = tensorflow.reshape(anchors, [1, number_of_anchors, 4]) + tensorflow.reshape(shifts, [k, 1, 4])
+
+    bbox = tensorflow.reshape(bbox, [k * number_of_anchors, 4])
+
+    return bbox
+
+
+def inside_image(y_pred, img_info):
+    """
+    Calc indicies of anchors which are located completely inside of the image
+    whose size is specified by img_info ((height, width, scale)-shaped array).
+
+    :param y_pred: anchors
+    :param img_info:
+
+    :return:
+    """
+    inds_inside = tensorflow.where(
+        (y_pred[:, 0] >= 0) &
+        (y_pred[:, 1] >= 0) &
+        (y_pred[:, 2] < img_info[1]) &  # width
+        (y_pred[:, 3] < img_info[0])  # height
+    )[0]
+
+    return inds_inside, y_pred[inds_inside]

@@ -1,7 +1,6 @@
 import keras.backend
 import keras.utils
 import numpy
-
 import keras_rcnn.losses.rpn
 
 
@@ -25,24 +24,40 @@ def test_regression():
     assert numpy.isclose(expected_loss, loss)
 
 
-# def test_proposal():
-#     anchors = 9
-#
-#     y_true_classification = numpy.random.choice(range(0, 20), 100)
-#     y_true_classification = keras.utils.to_categorical(y_true_classification)
-#     y_true_classification = numpy.expand_dims(y_true_classification, 0)
-#
-#     y_true_regression = numpy.random.choice(range(0, 224), 400)
-#     y_true_regression = y_true_regression.reshape((-1, 4))
-#     y_true_regression = numpy.expand_dims(y_true_regression, 0)
-#
-#     y_true = numpy.concatenate([y_true_classification, y_true_regression], -1)
-#
-#     y_pred_classification = numpy.random.random((1, 7, 7, 9))
-#     y_pred_regression = numpy.random.random((1, 7, 7, 36))
-#
-#     y_pred = numpy.concatenate([y_pred_classification, y_pred_regression], -1)
-#
-#     loss = keras_rcnn.losses.rpn.proposal(anchors)(y_true, y_pred)
-#
-#     # assert loss == 0.0
+def test_encode():
+    anchors = 9
+    features = (14, 14)
+    image_shape = (224, 224)
+    samples = 91
+
+    y_true = numpy.random.choice(range(0, image_shape[0]), 4*samples)
+    y_true = y_true.reshape((-1, 4))
+    y_true = numpy.expand_dims(y_true, 0)
+
+    bbox_labels, bbox_reg_targets, inds_inside, n_all_bbox = keras_rcnn.losses.rpn.encode(features, image_shape, y_true)
+
+    assert bbox_labels.shape == (84, )
+
+    assert bbox_reg_targets.shape == (84, 4) #keras.backend.int_shape(bbox_reg_targets) == (84, 4)
+
+    assert inds_inside.shape == (84, )
+
+    assert n_all_bbox == features[0]*features[1]*anchors
+
+
+def test_proposal():
+    anchors = 9
+    features = (14, 14)
+    image_shape = (224, 224)
+    stride = 16
+
+    y_pred_classification = numpy.zeros((1, features[0], features[1], anchors))
+    y_pred_regression = numpy.zeros((1, features[0], features[1], anchors * 4))
+
+    y_pred = numpy.concatenate([y_pred_regression, y_pred_classification], -1)
+
+    y_true = numpy.zeros((100, 4))
+    y_true = numpy.expand_dims(y_true, 0)
+    loss = keras_rcnn.losses.rpn.proposal(anchors, image_shape=image_shape, stride=stride)(y_true, y_pred)
+
+    assert keras.backend.eval(loss) == 0.0
