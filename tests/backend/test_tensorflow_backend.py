@@ -9,15 +9,8 @@ def test_crop_and_resize():
         numpy.array([[[0.1, 0.1, 0.2, 0.2],
                       [0.5, 0.5, 0.8, 0.8]]]))
     size = [7, 7]
-    slices = keras_rcnn.backend.crop_and_resize(image, regions, size)
+    slices = keras_rcnn.backend.crop_and_resize(image, boxes, size)
     assert keras.backend.eval(slices).shape == (2, 7, 7, 3)
-
-
-def test_bbox_overlaps():
-    boxes = numpy.zeros((84, 4))
-    query_boxes = numpy.zeros((5, 4))
-    overlaps = keras_rcnn.backend.bbox_overlaps(boxes, query_boxes)
-    assert overlaps.shape == (84, 5)
 
 
 def test_overlap():
