@@ -45,11 +45,11 @@ def filter_boxes(proposals, minimum):
     ws = proposals[:, 2] - proposals[:, 0] + 1
     hs = proposals[:, 3] - proposals[:, 1] + 1
 
-    indicies = numpy.where((ws >= minimum) & (hs >= minimum))#tensorflow.where((ws >= minimum) & (hs >= minimum))
+    indicies = tensorflow.where((ws >= minimum) & (hs >= minimum))
 
-    indicies = numpy.ravel(indicies)#keras.backend.flatten(indicies)
+    indicies = keras.backend.flatten(indicies)
 
-    return indicies#keras.backend.cast(indicies, tensorflow.int32)
+    return keras.backend.cast(indicies, tensorflow.int32)
 
 
 def non_maximum_suppression(boxes, scores, maximum, threshold=0.5):
