@@ -5,7 +5,7 @@ import keras
 import keras.backend
 
 def test_anchor():
-    x = numpy.array(#keras.backend.variable(numpy.array(
+    x = keras.backend.variable(numpy.array(
       [[ -84.,  -40.,  99.,  55.],
        [-176.,  -88., 191., 103.],
        [-360., -184., 375., 199.],
@@ -15,10 +15,9 @@ def test_anchor():
        [ -36.,  -80.,  51.,  95.],
        [ -80., -168.,  95., 183.],
        [-168., -344., 183., 359.]]
-    )#)
+    ))
     y = keras_rcnn.backend.anchor()
-    numpy.testing.assert_array_equal(x, y) #assert keras.backend.eval(x) == keras.backend.eval(y)
-
+    assert keras.backend.eval(keras.backend.all(keras.backend.equal(keras.backend.eval(x), keras.backend.eval(y))))
 
 def test_clip():
     pass

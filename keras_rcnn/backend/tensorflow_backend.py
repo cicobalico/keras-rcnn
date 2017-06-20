@@ -157,7 +157,7 @@ def overlapping(y_true, y_pred, inds_inside):
     argmax_overlaps_inds = overlaps.argmax(axis=1)
     gt_argmax_overlaps_inds = overlaps.argmax(axis=0)
 
-    max_overlaps = overlaps[numpy.arange(len(inds_inside)),argmax_overlaps_inds]#overlaps[keras.backend.arange(len(inds_inside)), argmax_overlaps_inds]
+    max_overlaps = overlaps[keras.backend.arange(len(inds_inside)), argmax_overlaps_inds]
 
     return argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds
 
@@ -265,24 +265,23 @@ def label(y_true, y_pred, inds_inside):
 
 def shift(shape, stride):
 
-    shift_x = numpy.arange(0, shape[0]) * stride#keras.backend.arange(0, shape[0]) * stride
-    shift_y = numpy.arange(0, shape[1]) * stride#keras.backend.arange(0, shape[1]) * stride
+    shift_x = keras.backend.arange(0, shape[0]) * stride
+    shift_y = keras.backend.arange(0, shape[1]) * stride
 
-    shift_x, shift_y = numpy.meshgrid(shift_x, shift_y) #tensorflow.meshgrid(shift_x, shift_y)
+    shift_x, shift_y = tensorflow.meshgrid(shift_x, shift_y)
 
-    #shifts = tensorflow.concat((tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1]), tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1])), axis = 0)
-    #shifts = tensorflow.transpose(shifts)
-    shifts = numpy.vstack((shift_x.ravel(), shift_y.ravel(), shift_x.ravel(), shift_y.ravel())).transpose()
+    shifts = tensorflow.stack((tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1]), tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1])), axis = 0)
+    shifts = tensorflow.transpose(shifts)
     anchors = keras_rcnn.backend.anchor()
 
     # Create all bbox
-    number_of_anchors = anchors.shape[0]
+    number_of_anchors = anchors.get_shape().as_list()[0]
 
-    k = shifts.shape[0]  # number of base points = feat_h * feat_w
+    k = shifts.get_shape().as_list()[0]  # number of base points = feat_h * feat_w
 
-    bbox = anchors.reshape(1, number_of_anchors, 4) + shifts.reshape(k, 1, 4) #tensorflow.reshape(anchors, [1, number_of_anchors, 4]) + tensorflow.reshape(shifts, [k, 1, 4])
+    bbox = tensorflow.reshape(anchors, [1, number_of_anchors, 4]) + tensorflow.cast(tensorflow.reshape(shifts, [k, 1, 4]), dtype=tensorflow.float32)
 
-    bbox = bbox.reshape(k * number_of_anchors, 4) #tensorflow.reshape(bbox, [k * number_of_anchors, 4])
+    bbox = tensorflow.reshape(bbox, [k * number_of_anchors, 4])
 
     return bbox
 
@@ -297,12 +296,13 @@ def inside_image(y_pred, img_info):
 
     :return:
     """
-    inds_inside = numpy.where(#tensorflow.where(
+    inds_inside = tensorflow.where(
         (y_pred[:, 0] >= 0) &
         (y_pred[:, 1] >= 0) &
         (y_pred[:, 2] < img_info[1]) &  # width
         (y_pred[:, 3] < img_info[0])  # height
-    )[0]
+    )
+    inds_inside = tensorflow.cast(inds_inside, tensorflow.int32)
 
-    return inds_inside, y_pred[inds_inside]
+    return tensorflow.squeeze(inds_inside), tensorflow.squeeze(tensorflow.gather(y_pred, inds_inside)) 
 
