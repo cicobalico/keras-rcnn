@@ -1,6 +1,5 @@
 import itertools
 import keras.backend
-import numpy
 import tensorflow
 import keras_rcnn.backend
 
@@ -123,23 +122,33 @@ def overlap(a, b):
     -------
     overlaps: (N, K) ndarray of overlap between boxes and query_boxes
     """
+    N = tensorflow.shape(a)[0]
+    K = tensorflow.shape(b)[0]
+    i = tensorflow.constant(0)
+    initial_overlaps = tensorflow.Variable([])
 
-    overlaps = numpy.zeros((a.shape[0], b.shape[0]), dtype=numpy.float)
+    def cond(i, l):
+        return i < N
 
-    for k, n in itertools.product(range(b.shape[0]), range(a.shape[0])):
-        area = ((b[k, 2] - b[k, 0] + 1) * (b[k, 3] - b[k, 1] + 1))
+    def body(i, l):
+        area = ((b[:, 2] - b[:, 0] + 1) * (b[:, 3] - b[:, 1] + 1))
+        iw = tensorflow.maximum( (tensorflow.minimum(a[i, 2], b[:, 2]) - tensorflow.maximum(a[i, 0], b[:, 0]) + 1), 0.0 )
+        ih = tensorflow.maximum( (tensorflow.minimum(a[i, 3], b[:, 3]) - tensorflow.maximum(a[i, 1], b[:, 1]) + 1), 0.0 )
+        ua = (a[i, 2] - a[i, 0] + 1) * (a[i, 3] - a[i, 1] + 1) + area - iw * ih
+        iou = iw * ih / ua
+        l = tensorflow.concat([l, iou], 0)
+        return i+1, l
 
-        iw = (min(a[n, 2], b[k, 2]) - max(a[n, 0], b[k, 0]) + 1)
+    index, final_overlaps = tensorflow.while_loop(
+        cond, 
+        body, 
+        [i, initial_overlaps], 
+        shape_invariants=[i.get_shape(), tensorflow.TensorShape([None])]
+    )
 
-        if iw > 0:
-            ih = (min(a[n, 3], b[k, 3]) - max(a[n, 1], b[k, 1]) + 1)
+    final_overlaps = tensorflow.reshape(final_overlaps, (N, K))
 
-            if ih > 0:
-                ua = float((a[n, 2] - a[n, 0] + 1) * (a[n, 3] - a[n, 1] + 1) + area - iw * ih)
-
-                overlaps[n, k] = iw * ih / ua
-
-    return overlaps
+    return final_overlaps
 
 
 def overlapping(y_true, y_pred, inds_inside):
@@ -154,10 +163,10 @@ def overlapping(y_true, y_pred, inds_inside):
     """
     overlaps = overlap(y_pred, y_true[:, :4])
 
-    argmax_overlaps_inds = overlaps.argmax(axis=1)
-    gt_argmax_overlaps_inds = overlaps.argmax(axis=0)
-
-    max_overlaps = overlaps[keras.backend.arange(len(inds_inside)), argmax_overlaps_inds]
+    argmax_overlaps_inds = tensorflow.argmax(overlaps, axis=1)
+    gt_argmax_overlaps_inds = tensorflow.argmax(overlaps, axis=0)
+    
+    max_overlaps = tensorflow.gather_nd(overlaps, tensorflow.transpose(tensorflow.stack([tensorflow.range(tensorflow.shape(inds_inside)[0]), tensorflow.cast(argmax_overlaps_inds, tensorflow.int32)], axis = 0 )))
 
     return argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds
 
@@ -185,23 +194,20 @@ def subsample_positive_labels(labels):
 
     :return:
     """
-    num_fg = int(RPN_FG_FRACTION * RPN_BATCHSIZE)
+    num_fg = RPN_FG_FRACTION * RPN_BATCHSIZE
+    fg_inds = tensorflow.where(tensorflow.equal(labels, 1))
+    fg_inds = tensorflow.shape(fg_inds)[0]
+    size = tensorflow.cast(fg_inds, tensorflow.int32) - tensorflow.cast(num_fg, tensorflow.int32)
 
-    fg_inds = numpy.where(labels == 1)[0]# tensorflow.where(labels == 1)[0]
-    '''
-    if len(fg_inds) > num_fg:
-        size = int(len(fg_inds) - num_fg)
+    def more_positive():
+        print(tensorflow.multinomial(tensorflow.log(tensorflow.ones((fg_inds, 1)) * 10.), size))
+        elems = tensorflow.gather(tensorflow.range(fg_inds), tensorflow.multinomial(tensorflow.log(tensorflow.ones((fg_inds, 1)) * 10.), size))
+        return tensorflow.scatter_update(tensorflow.Variable(labels, validate_shape=False), elems, -1)
 
-        elems = tensorflow.gather(fg_inds, tensorflow.multinomial(tensorflow.ones(len(fg_inds))[:, tensorflow.newaxis], size))
-        numpy.random.choice(fg_inds, size, replace=False)
-        labels[elems] = -1 
-    '''
-    if len(fg_inds) > num_fg:
-        size = int(len(fg_inds) - num_fg)
+    def less_positive():
+        return labels
 
-        labels[numpy.random.choice(fg_inds, size, replace=False)] = -1
-
-    return labels
+    return tensorflow.cond(tensorflow.less_equal(size, 0), lambda: less_positive(), lambda: more_positive())
 
 
 def subsample_negative_labels(labels):
@@ -211,23 +217,19 @@ def subsample_negative_labels(labels):
 
     :return:
     """
-    num_bg = RPN_BATCHSIZE - numpy.sum(labels[labels == 1])# tensorflow.reduce_sum(labels[labels == 1])
+    num_bg = RPN_BATCHSIZE - tensorflow.reduce_sum(tensorflow.gather(labels, tensorflow.where(tensorflow.equal(labels, 1)))) 
 
-    bg_inds = numpy.where(labels == 0)[0] #tensorflow.where(labels == 0)[0]
-    '''
-    if len(bg_inds) > num_bg:
-        size = bg_inds.shape[0] - num_bg
+    bg_inds = tensorflow.where(tensorflow.equal(labels, 0))
+    bg_inds = tensorflow.shape(bg_inds)[0]
+    size = tensorflow.cast(bg_inds, tensorflow.int32) - tensorflow.cast(num_bg, tensorflow.int32)
+    def more_negative():
+        elems = tensorflow.gather(tensorflow.range(bg_inds), tensorflow.multinomial(tensorflow.log(tensorflow.ones((bg_inds, 1)) * 10.), size))
+        return tensorflow.scatter_update(tensorflow.Variable(labels, validate_shape=False), elems, -1)
 
-        elems = tensorflow.gather(bg_inds, tensorflow.multinomial(tensorflow.ones(len(bg_inds))[:, tensorflow.newaxis], size))
-        numpy.random.choice(bg_inds, size, replace=False)
-        labels[elems] = -1
-    '''
-    if len(bg_inds) > num_bg:
-        size = int(len(bg_inds) - num_bg)
+    def less_negative():
+        return labels
 
-        labels[numpy.random.choice(bg_inds, size, replace=False)] = -1
-
-    return labels
+    return tensorflow.cond(tensorflow.less_equal(size, 0), lambda: less_negative(), lambda: more_negative())
 
 
 def label(y_true, y_pred, inds_inside):
@@ -241,30 +243,40 @@ def label(y_true, y_pred, inds_inside):
 
     :return:
     """
-    # assign ignore labels first
-    labels = numpy.ones((len(inds_inside),),) * -1 # tensorflow.ones((len(inds_inside),), dtype=tensorflow.int32) * -1
-
     argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds = overlapping(y_true, y_pred, inds_inside)
+    N = tensorflow.shape(inds_inside)[0]
+    i = tensorflow.constant(0)
+    initial_labels = tensorflow.Variable([])
 
-    # assign bg labels first so that positive labels can clobber them
-    labels[max_overlaps < RPN_NEGATIVE_OVERLAP] = 0
+    def cond(i, l):
+        return i < N
 
-    # fg label: for each gt, anchor with highest overlap
-    labels[gt_argmax_overlaps_inds] = 1
+    def body(i, l):
+        max_overlaps_value = max_overlaps[i]
+        value = tensorflow.cast(max_overlaps_value < RPN_NEGATIVE_OVERLAP, tensorflow.float32) * 0 + tensorflow.cast(max_overlaps_value >= RPN_NEGATIVE_OVERLAP, tensorflow.float32) * -1
 
-    # fg label: above threshold IOU
-    labels[max_overlaps >= RPN_POSITIVE_OVERLAP] = 1
+        sum_gt_argmax_overlaps_inds = (tensorflow.reduce_sum(tensorflow.cast(tensorflow.equal(tensorflow.cast(gt_argmax_overlaps_inds, tensorflow.int32), tensorflow.cast(i, tensorflow.int32)), tensorflow.float32)))
+        value = tensorflow.cast(sum_gt_argmax_overlaps_inds > 0, tensorflow.float32) * 1 + tensorflow.cast(sum_gt_argmax_overlaps_inds == 0, tensorflow.float32) * value
 
-    # assign bg labels last so that negative labels can clobber positives
-    labels[max_overlaps < RPN_NEGATIVE_OVERLAP] = 0
+        value = tensorflow.cast(max_overlaps_value >= RPN_POSITIVE_OVERLAP, tensorflow.float32) * 1 + tensorflow.cast(max_overlaps_value < RPN_POSITIVE_OVERLAP, tensorflow.float32) * value
 
+        value = tensorflow.cast(max_overlaps_value < RPN_NEGATIVE_OVERLAP, tensorflow.float32) * 0 + tensorflow.cast(max_overlaps_value >= RPN_NEGATIVE_OVERLAP, tensorflow.float32) * value #TODO: resolve redundancy
+
+        l = tensorflow.concat([l, [value]], 0)
+        return i+1, l
+
+    index, labels = tensorflow.while_loop(
+        cond, 
+        body, 
+        [i, initial_labels], 
+        shape_invariants=[i.get_shape(), tensorflow.TensorShape([None])]
+    )
+    
     labels = balance(labels)
-
     return argmax_overlaps_inds, labels
 
 
 def shift(shape, stride):
-
     shift_x = keras.backend.arange(0, shape[0]) * stride
     shift_y = keras.backend.arange(0, shape[1]) * stride
 
@@ -275,9 +287,9 @@ def shift(shape, stride):
     anchors = keras_rcnn.backend.anchor()
 
     # Create all bbox
-    number_of_anchors = anchors.get_shape().as_list()[0]
+    number_of_anchors = tensorflow.shape(anchors)[0] 
 
-    k = shifts.get_shape().as_list()[0]  # number of base points = feat_h * feat_w
+    k = tensorflow.shape(shifts)[0]  # number of base points = feat_h * feat_w
 
     bbox = tensorflow.reshape(anchors, [1, number_of_anchors, 4]) + tensorflow.cast(tensorflow.reshape(shifts, [k, 1, 4]), dtype=tensorflow.float32)
 
@@ -304,5 +316,5 @@ def inside_image(y_pred, img_info):
     )
     inds_inside = tensorflow.cast(inds_inside, tensorflow.int32)
 
-    return tensorflow.squeeze(inds_inside), tensorflow.squeeze(tensorflow.gather(y_pred, inds_inside)) 
+    return inds_inside[:, 0], tensorflow.reshape(tensorflow.gather(y_pred, inds_inside), [tensorflow.shape(inds_inside)[0], 4]) 
 

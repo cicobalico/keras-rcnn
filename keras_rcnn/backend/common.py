@@ -1,7 +1,6 @@
 import keras.backend
 import numpy
 
-
 def anchor(base_size=16, ratios=None, scales=None):
     """
     Generates a regular grid of multi-aspect and multi-scale anchor boxes.
