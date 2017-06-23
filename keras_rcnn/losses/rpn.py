@@ -1,10 +1,11 @@
 import keras
 import keras_rcnn.backend
 import numpy
+import tensorflow
 
 def separate_pred(y_pred):
-    n_anchors = y_pred.shape[-1] // 5
-    return y_pred[:, :, :, -4*n_anchors:], y_pred[:, :, :, :-4*n_anchors]
+    n_anchors = tensorflow.shape(y_pred)[-1] // 5
+    return y_pred[:, :, :, 0 : 4 * n_anchors], y_pred[:, :, :, 4 * n_anchors : 8 * n_anchors]
 
 
 def encode(features, image_shape, y_true, stride = 16):
@@ -14,15 +15,16 @@ def encode(features, image_shape, y_true, stride = 16):
 
     # indices of gt boxes with the greatest overlap, bbox labels
     # TODO: assert y_true.shape[0] == 1
-    argmax_overlaps_inds, bbox_labels = keras_rcnn.backend.label(y_true[0], all_inside_bbox, inds_inside)
+    y_true = tensorflow.gather(y_true, tensorflow.constant(0))
+    argmax_overlaps_inds, bbox_labels = keras_rcnn.backend.label(y_true, all_inside_bbox, inds_inside)
 
     # gt boxes
-    gt_boxes = y_true[0, argmax_overlaps_inds]
+    gt_boxes = tensorflow.gather(y_true, argmax_overlaps_inds)
 
     # Convert fixed anchors in (x, y, w, h) to (dx, dy, dw, dh)
     bbox_reg_targets = keras_rcnn.backend.bbox_transform(all_inside_bbox, gt_boxes)
 
-    return bbox_labels, bbox_reg_targets, inds_inside, len(shifted_anchors)
+    return bbox_labels, bbox_reg_targets, inds_inside, tensorflow.shape(shifted_anchors)[0]
 
 
 def proposal(anchors, *args, **kwargs):
@@ -36,25 +38,66 @@ def proposal(anchors, *args, **kwargs):
         if 'stride' in kwargs:
             stride = kwargs['stride']
 
-        features = y_pred.shape[1:3]
+        features = tensorflow.shape(y_pred)[1:3]
 
         gt_classification, gt_regression, inds_inside, num_shifted_anchors = encode(features, image_shape, y_true, stride)
 
-        y_true_classification = numpy.zeros((1, features[0], features[1], anchors*2))
-        y_true_regression = numpy.zeros((1, features[0], features[1], anchors*4*2))
+        N = features[0] * features[1] * anchors
+        ii = tensorflow.constant(0)
+        initial_y_true_classification = tensorflow.TensorArray(size = N, dtype = tensorflow.float32)
+        initial_y_true_regression1 = tensorflow.TensorArray(size = N * 4, dtype = tensorflow.float32)
+        initial_y_true_regression2 = tensorflow.TensorArray(size = N * 4, dtype = tensorflow.float32)
 
-        for ii in numpy.arange(len(inds_inside)):
-            i = inds_inside[ii] // (9 * 14)
-            j = (inds_inside[ii] // 9) % 14
-            a = inds_inside[ii] % 9 
-            gt_class = int(gt_classification[ii])
-            y_true_classification[:, i, j, a * gt_class] = gt_class
-            y_true_classification[:, i, j, anchors + a * gt_class] = gt_class
-            y_true_regression[:, i, j, a * gt_class * 4 : (a * gt_class + 1) * 4] = gt_class
-            y_true_regression[:, i, j, anchors * 4 + a * gt_class * 4 : anchors * 4 + (a * gt_class + 1) * 4] = gt_regression[ii, :]
-        classification = _classification(anchors=anchors)(keras.backend.variable(y_true_classification), keras.backend.variable(y_pred_classification))
+        def cond(ii, *args):
+            return ii < N
 
-        regression = _regression(anchors=anchors)(keras.backend.variable(y_true_regression), keras.backend.variable(y_pred_regression))
+        def body(ii, c, r1, r2):
+            def not_inds(ii, c, r1, r2):
+                c = c.write(ii, tensorflow.cast(0, tensorflow.float32))
+                r1 = r1.write(ii * 4, tensorflow.cast(0, tensorflow.float32))
+                r1 = r1.write(ii * 4+1, tensorflow.cast(0, tensorflow.float32))
+                r1 = r1.write(ii * 4+2, tensorflow.cast(0, tensorflow.float32))
+                r1 = r1.write(ii * 4+3, tensorflow.cast(0, tensorflow.float32))
+                r2 = r2.write(ii * 4, tensorflow.cast(0, tensorflow.float32))
+                r2 = r2.write(ii * 4+1, tensorflow.cast(0, tensorflow.float32))
+                r2 = r2.write(ii * 4+2, tensorflow.cast(0, tensorflow.float32))
+                r2 = r2.write(ii * 4+3, tensorflow.cast(0, tensorflow.float32))
+                return ii+1, c, r1, r2
+        
+            def in_inds(ii, c, r1, r2):
+                idx = tensorflow.cast(tensorflow.where(tensorflow.equal(inds_inside, ii))[0][0], tensorflow.int32)
+                gt_class = gt_classification[idx]
+
+                c = c.write(ii, tensorflow.cast(gt_class, tensorflow.float32))
+                r1 = r1.write(ii * 4, tensorflow.cast(gt_class, tensorflow.float32))
+                r1 = r1.write(ii * 4+1, tensorflow.cast(gt_class, tensorflow.float32))
+                r1 = r1.write(ii * 4+2, tensorflow.cast(gt_class, tensorflow.float32))
+                r1 = r1.write(ii * 4+3, tensorflow.cast(gt_class, tensorflow.float32))
+                r2 = r2.write(ii * 4, gt_regression[idx, 0])
+                r2 = r2.write(ii * 4+1, gt_regression[idx, 1])
+                r2 = r2.write(ii * 4+2, gt_regression[idx, 2])
+                r2 = r2.write(ii * 4+3, gt_regression[idx, 3])
+                return ii+1, c, r1, r2
+        
+            return tensorflow.cond(tensorflow.less(tensorflow.shape(tensorflow.where(tensorflow.equal(inds_inside, ii)))[0], 1), lambda: not_inds(ii, c, r1, r2), lambda: in_inds(ii, c, r1, r2))
+
+        index, y_true_classification, r1, r2 = tensorflow.while_loop(
+                cond, 
+                body, 
+                [ii, initial_y_true_classification, initial_y_true_regression1, initial_y_true_regression2]
+        )
+
+        y_true_classification = y_true_classification.stack()
+        r1 = r1.stack()
+        r2 = r2.stack()
+        y_true_regression = tensorflow.concat([tensorflow.reshape(r1, (1, features[0], features[1], anchors*4)), tensorflow.reshape(r2, (1, features[0], features[1], anchors*4))], axis=3)
+        y_true_classification = tensorflow.reshape(y_true_classification, (1, features[0], features[1], anchors))
+        y_true_classification = tensorflow.concat([y_true_classification, y_true_classification], axis=3)
+
+      
+        classification = _classification(anchors=anchors)(y_true_classification, y_pred_classification)
+
+        regression = _regression(anchors=anchors)(y_true_regression, y_pred_regression)
 
         return classification + regression
 
