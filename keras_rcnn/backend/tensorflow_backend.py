@@ -1,17 +1,17 @@
-import itertools
 import keras.backend
 import tensorflow
-import keras_rcnn.backend
 
+import keras_rcnn.backend
 
 RPN_NEGATIVE_OVERLAP = 0.3
 RPN_POSITIVE_OVERLAP = 0.7
 RPN_FG_FRACTION = 0.5
 RPN_BATCHSIZE = 256
 
+
 def bbox_transform_inv(shifted, boxes):
     if boxes.shape[0] == 0:
-        return tensorflow.zeros((0, boxes.shape[1]), dtype=boxes.dtype)
+        return keras.backend.zeros((0, boxes.shape[1]), dtype=boxes.dtype)
 
     a = shifted[:, 2] - shifted[:, 0] + 1.0
     b = shifted[:, 3] - shifted[:, 1] + 1.0
@@ -27,8 +27,8 @@ def bbox_transform_inv(shifted, boxes):
     pred_ctr_x = dx * a[:, tensorflow.newaxis] + ctr_x[:, tensorflow.newaxis]
     pred_ctr_y = dy * b[:, tensorflow.newaxis] + ctr_y[:, tensorflow.newaxis]
 
-    pred_w = tensorflow.exp(dw) * a[:, tensorflow.newaxis]
-    pred_h = tensorflow.exp(dh) * b[:, tensorflow.newaxis]
+    pred_w = keras.backend.exp(dw) * a[:, tensorflow.newaxis]
+    pred_h = keras.backend.exp(dh) * b[:, tensorflow.newaxis]
 
     pred_boxes = [
         pred_ctr_x - 0.5 * pred_w,
@@ -60,36 +60,6 @@ def non_maximum_suppression(boxes, scores, maximum, threshold=0.5):
     )
 
 
-def propose(boxes, scores, maximum):
-    shape = keras.backend.int_shape(boxes)[1:3]
-
-    shifted = keras_rcnn.backend.shift(shape, 16)
-
-    proposals = keras.backend.reshape(boxes, (-1, 4))
-
-    proposals = keras_rcnn.backend.bbox_transform_inv(shifted, proposals)
-
-    proposals = keras_rcnn.backend.clip(proposals, shape)
-
-    indicies = keras_rcnn.backend.filter_boxes(proposals, 1)
-
-    proposals = keras.backend.gather(proposals, indicies)
-
-    scores = scores[:, :, :, :9]
-    scores = keras.backend.reshape(scores, (-1, 1))
-    scores = keras.backend.gather(scores, indicies)
-    scores = keras.backend.flatten(scores)
-
-    proposals = keras.backend.cast(proposals, tensorflow.float32)
-    scores = keras.backend.cast(scores, tensorflow.float32)
-
-    indicies = keras_rcnn.backend.non_maximum_suppression(proposals, scores, maximum, 0.7)
-
-    proposals = keras.backend.gather(proposals, indicies)
-
-    return keras.backend.expand_dims(proposals, 0)
-
-
 def resize_images(images, shape):
     return tensorflow.image.resize_images(images, shape)
 
@@ -104,11 +74,12 @@ def crop_and_resize(image, boxes, size):
     # Returns
     4D Tensor (number of regions, slice_height, slice_width, channels)
     """
-    box_ind = tensorflow.zeros_like(boxes, tensorflow.int32)
+    box_ind = keras.backend.zeros_like(boxes, tensorflow.int32)
     box_ind = box_ind[..., 0]
-    box_ind = tensorflow.reshape(box_ind, [-1])
+    box_ind = keras.backend.reshape(box_ind, [-1])
 
-    boxes = tensorflow.reshape(boxes, [-1, 4])
+    boxes = keras.backend.reshape(boxes, [-1, 4])
+
     return tensorflow.image.crop_and_resize(image, boxes, box_ind, size)
 
 
@@ -146,7 +117,7 @@ def overlap(a, b):
         shape_invariants=[i.get_shape(), tensorflow.TensorShape([None])]
     )
 
-    final_overlaps = tensorflow.reshape(final_overlaps, (N, K))
+    final_overlaps = keras.backend.reshape(final_overlaps, (N, K))
 
     return final_overlaps
 
@@ -163,8 +134,8 @@ def overlapping(y_true, y_pred, inds_inside):
     """
     overlaps = overlap(y_pred, y_true[:, :4])
 
-    argmax_overlaps_inds = tensorflow.argmax(overlaps, axis=1)
-    gt_argmax_overlaps_inds = tensorflow.argmax(overlaps, axis=0)
+    argmax_overlaps_inds = keras.backend.argmax(overlaps, axis=1)
+    gt_argmax_overlaps_inds = keras.backend.argmax(overlaps, axis=0)
     
     max_overlaps = tensorflow.gather_nd(overlaps, tensorflow.transpose(tensorflow.stack([tensorflow.range(tensorflow.shape(inds_inside)[0]), tensorflow.cast(argmax_overlaps_inds, tensorflow.int32)], axis = 0 )))
 
@@ -282,18 +253,31 @@ def shift(shape, stride):
 
     shift_x, shift_y = tensorflow.meshgrid(shift_x, shift_y)
 
-    shifts = tensorflow.stack((tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1]), tensorflow.reshape(shift_x, [-1]), tensorflow.reshape(shift_y, [-1])), axis = 0)
-    shifts = tensorflow.transpose(shifts)
+    shifts = keras.backend.stack(
+        axis=0,
+        x=(
+            keras.backend.reshape(shift_x, [-1]),
+            keras.backend.reshape(shift_y, [-1]),
+            keras.backend.reshape(shift_x, [-1]),
+            keras.backend.reshape(shift_y, [-1])
+        )
+    )
+
+    shifts = keras.backend.transpose(shifts)
+
     anchors = keras_rcnn.backend.anchor()
 
     # Create all bbox
-    number_of_anchors = tensorflow.shape(anchors)[0] 
+    number_of_anchors = keras.backend.shape(anchors)[0]
 
-    k = tensorflow.shape(shifts)[0]  # number of base points = feat_h * feat_w
+    # number of base points = feat_h * feat_w
+    k = keras.backend.shape(shifts)[0]
 
-    bbox = tensorflow.reshape(anchors, [1, number_of_anchors, 4]) + tensorflow.cast(tensorflow.reshape(shifts, [k, 1, 4]), dtype=tensorflow.float32)
+    bbox = keras.backend.reshape(anchors, [1, number_of_anchors, 4])
 
-    bbox = tensorflow.reshape(bbox, [k * number_of_anchors, 4])
+    bbox += keras.backend.cast(keras.backend.reshape(shifts, [k, 1, 4]), dtype=keras.backend.floatx())
+
+    bbox = keras.backend.reshape(bbox, [k * number_of_anchors, 4])
 
     return bbox
 
@@ -314,7 +298,7 @@ def inside_image(y_pred, img_info):
         (y_pred[:, 2] < img_info[1]) &  # width
         (y_pred[:, 3] < img_info[0])  # height
     )
-    inds_inside = tensorflow.cast(inds_inside, tensorflow.int32)
 
-    return inds_inside[:, 0], tensorflow.reshape(tensorflow.gather(y_pred, inds_inside), [tensorflow.shape(inds_inside)[0], 4]) 
+    inds_inside = keras.backend.cast(inds_inside, tensorflow.int32)
 
+    return inds_inside[:, 0], keras.backend.reshape(tensorflow.gather(y_pred, inds_inside), [keras.backend.shape(inds_inside)[0], 4])

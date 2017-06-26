@@ -1,5 +1,9 @@
 import keras.backend
 import numpy
+import tensorflow
+
+import keras_rcnn.backend
+
 
 def anchor(base_size=16, ratios=None, scales=None):
     """
@@ -106,3 +110,34 @@ def _whctrs(anchor):
     x_ctr = anchor[0] + 0.5 * (w - 1)
     y_ctr = anchor[1] + 0.5 * (h - 1)
     return w, h, x_ctr, y_ctr
+
+
+def propose(boxes, scores, maximum):
+    shape = keras.backend.int_shape(boxes)[1:3]
+
+    shifted = keras_rcnn.backend.shift(shape, 16)
+
+    proposals = keras.backend.reshape(boxes, (-1, 4))
+
+    proposals = keras_rcnn.backend.bbox_transform_inv(shifted, proposals)
+
+    proposals = keras_rcnn.backend.clip(proposals, shape)
+
+    indicies = keras_rcnn.backend.filter_boxes(proposals, 1)
+
+    proposals = keras.backend.gather(proposals, indicies)
+
+    scores = scores[:, :, :, :9]
+    scores = keras.backend.reshape(scores, (-1, 1))
+    scores = keras.backend.gather(scores, indicies)
+    scores = keras.backend.flatten(scores)
+
+    proposals = keras.backend.cast(proposals, keras.backend.floatx())
+
+    scores = keras.backend.cast(scores, keras.backend.floatx())
+
+    indicies = keras_rcnn.backend.non_maximum_suppression(proposals, scores, maximum, 0.7)
+
+    proposals = keras.backend.gather(proposals, indicies)
+
+    return keras.backend.expand_dims(proposals, 0)
