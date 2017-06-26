@@ -10,7 +10,8 @@ def test_label():
     feat_h, feat_w = (14, 14)
     img_info = (224, 224, 1)
 
-    gt_boxes = tensorflow.zeros((91, 4))
+    gt_boxes = numpy.zeros((91, 4))
+    gt_boxes = keras.backend.variable(gt_boxes)
 
     all_bbox = keras_rcnn.backend.shift((feat_h, feat_w), stride)
 
@@ -18,15 +19,18 @@ def test_label():
 
     argmax_overlaps_inds, bbox_labels = keras_rcnn.backend.label(gt_boxes, all_inside_bbox, inds_inside)
 
-    assert keras.backend.eval(argmax_overlaps_inds).shape == (84,)
+    argmax_overlaps_inds = keras.backend.eval(argmax_overlaps_inds)
+    bbox_labels = keras.backend.eval(bbox_labels)
 
-    assert keras.backend.eval(bbox_labels).shape == (84,)
+    assert argmax_overlaps_inds.shape == (84, )
+
+    assert bbox_labels.shape == (84, )
 
 
 def test_shift():
     y = keras_rcnn.backend.shift((14, 14), 16)
-
-    assert keras.backend.eval(y).shape == (1764, 4)
+    y = keras.backend.eval(y)
+    assert y.shape == (1764, 4)
 
 
 def test_inside_image():
@@ -48,7 +52,8 @@ def test_overlapping():
     stride = 16
     features = (14, 14)
     img_info = (224, 224, 1)
-    gt_boxes = tensorflow.zeros((91, 4))
+    gt_boxes = numpy.zeros((91, 4))
+    gt_boxes = keras.backend.variable(gt_boxes)
 
     all_anchors = keras_rcnn.backend.shift(features, stride)
 
@@ -56,11 +61,15 @@ def test_overlapping():
 
     argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds = keras_rcnn.backend.overlapping(gt_boxes, all_inside_anchors, inds_inside)
 
-    assert keras.backend.eval(argmax_overlaps_inds).shape == (84,)
+    argmax_overlaps_inds = keras.backend.eval(argmax_overlaps_inds)
+    max_overlaps = keras.backend.eval(max_overlaps)
+    gt_argmax_overlaps_inds = keras.backend.eval(gt_argmax_overlaps_inds)
 
-    assert keras.backend.eval(max_overlaps).shape == (84,)
+    assert argmax_overlaps_inds.shape == (84, )
 
-    assert keras.backend.eval(gt_argmax_overlaps_inds).shape == (91,)
+    assert max_overlaps.shape == (84, )
+
+    assert gt_argmax_overlaps_inds.shape == (91, )
 
 
 def test_crop_and_resize():
