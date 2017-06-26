@@ -4,6 +4,7 @@ import tensorflow
 
 import keras_rcnn.backend
 
+
 def test_label():
     stride = 16
     feat_h, feat_w = (14, 14)
@@ -17,9 +18,9 @@ def test_label():
 
     argmax_overlaps_inds, bbox_labels = keras_rcnn.backend.label(gt_boxes, all_inside_bbox, inds_inside)
 
-    assert keras.backend.eval(argmax_overlaps_inds).shape == (84, )
+    assert keras.backend.eval(argmax_overlaps_inds).shape == (84,)
 
-    assert keras.backend.eval(bbox_labels).shape == (84, )
+    assert keras.backend.eval(bbox_labels).shape == (84,)
 
 
 def test_shift():
@@ -55,16 +56,16 @@ def test_overlapping():
 
     argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds = keras_rcnn.backend.overlapping(gt_boxes, all_inside_anchors, inds_inside)
 
-    assert keras.backend.eval(argmax_overlaps_inds).shape == (84, )
+    assert keras.backend.eval(argmax_overlaps_inds).shape == (84,)
 
-    assert keras.backend.eval(max_overlaps).shape == (84, )
+    assert keras.backend.eval(max_overlaps).shape == (84,)
 
-    assert keras.backend.eval(gt_argmax_overlaps_inds).shape == (91, )
+    assert keras.backend.eval(gt_argmax_overlaps_inds).shape == (91,)
 
 
 def test_crop_and_resize():
     image = keras.backend.variable(numpy.ones((1, 28, 28, 3)))
-    boxes = keras.backend.variable(numpy.array([[[0.1, 0.1, 0.2, 0.2],[0.5, 0.5, 0.8, 0.8]]]))
+    boxes = keras.backend.variable(numpy.array([[[0.1, 0.1, 0.2, 0.2], [0.5, 0.5, 0.8, 0.8]]]))
     size = [7, 7]
     slices = keras_rcnn.backend.crop_and_resize(image, boxes, size)
     assert keras.backend.eval(slices).shape == (2, 7, 7, 3)
