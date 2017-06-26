@@ -1,7 +1,6 @@
 import keras.engine
 
 import keras_rcnn.backend
-import keras_rcnn.backend.common
 
 
 class ObjectProposal(keras.engine.topology.Layer):
@@ -20,7 +19,7 @@ class ObjectProposal(keras.engine.topology.Layer):
         super(ObjectProposal, self).build(input_shape)
 
     def call(self, inputs, **kwargs):
-        return keras_rcnn.backend.common.propose(inputs[0], inputs[1], self.maximum_proposals)
+        return keras_rcnn.backend.propose(inputs[0], inputs[1], self.maximum_proposals)
 
     def compute_output_shape(self, input_shape):
         return self.output_dim

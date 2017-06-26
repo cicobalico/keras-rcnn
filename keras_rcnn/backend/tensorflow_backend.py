@@ -318,10 +318,12 @@ def label(y_true, y_pred, inds_inside):
 
     :return:
     """
-    argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds = overlapping(
-        y_true, y_pred, inds_inside)
+    argmax_overlaps_inds, max_overlaps, gt_argmax_overlaps_inds = overlapping(y_true, y_pred, inds_inside)
+
     N = tensorflow.shape(inds_inside)[0]
+    
     i = tensorflow.constant(0)
+    
     initial_labels = tensorflow.Variable([])
 
     def cond(i, l):
@@ -329,30 +331,18 @@ def label(y_true, y_pred, inds_inside):
 
     def body(i, l):
         max_overlaps_value = max_overlaps[i]
-        value = tensorflow.cast(max_overlaps_value < RPN_NEGATIVE_OVERLAP,
-                                tensorflow.float32) * 0 + tensorflow.cast(
-            max_overlaps_value >= RPN_NEGATIVE_OVERLAP,
-            tensorflow.float32) * -1
-
-        sum_gt_argmax_overlaps_inds = (tensorflow.reduce_sum(tensorflow.cast(
-            tensorflow.equal(
-                tensorflow.cast(gt_argmax_overlaps_inds, tensorflow.int32),
-                tensorflow.cast(i, tensorflow.int32)), tensorflow.float32)))
-        value = tensorflow.cast(sum_gt_argmax_overlaps_inds > 0,
-                                tensorflow.float32) * 1 + tensorflow.cast(
-            sum_gt_argmax_overlaps_inds == 0, tensorflow.float32) * value
-
-        value = tensorflow.cast(max_overlaps_value >= RPN_POSITIVE_OVERLAP,
-                                tensorflow.float32) * 1 + tensorflow.cast(
-            max_overlaps_value < RPN_POSITIVE_OVERLAP,
-            tensorflow.float32) * value
-
-        value = tensorflow.cast(max_overlaps_value < RPN_NEGATIVE_OVERLAP,
-                                tensorflow.float32) * 0 + tensorflow.cast(
-            max_overlaps_value >= RPN_NEGATIVE_OVERLAP,
-            tensorflow.float32) * value  # TODO: resolve redundancy
-
+        
+        value = tensorflow.cast(max_overlaps_value < RPN_NEGATIVE_OVERLAP, tensorflow.float32) * 0 + tensorflow.cast(max_overlaps_value >= RPN_NEGATIVE_OVERLAP, tensorflow.float32) * -1
+        
+        sum_gt_argmax_overlaps_inds = (tensorflow.reduce_sum(tensorflow.cast(tensorflow.equal(tensorflow.cast(gt_argmax_overlaps_inds, tensorflow.int32), tensorflow.cast(i, tensorflow.int32)), tensorflow.float32))) value = tensorflow.cast(sum_gt_argmax_overlaps_inds > 0, tensorflow.float32) * 1 + tensorflow.cast(sum_gt_argmax_overlaps_inds == 0, tensorflow.float32) * value
+        
+        value = tensorflow.cast(max_overlaps_value >= RPN_POSITIVE_OVERLAP, tensorflow.float32) * 1 + tensorflow.cast(max_overlaps_value < RPN_POSITIVE_OVERLAP, tensorflow.float32) * value
+        
+        # TODO: resolve redundancy
+        value = tensorflow.cast(max_overlaps_value < RPN_NEGATIVE_OVERLAP, tensorflow.float32) * 0 + tensorflow.cast(max_overlaps_value >= RPN_NEGATIVE_OVERLAP, tensorflow.float32) * value  
+        
         l = tensorflow.concat([l, [value]], 0)
+        
         return i + 1, l
 
     index, labels = tensorflow.while_loop(
