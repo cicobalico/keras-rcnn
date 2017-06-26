@@ -1,11 +1,12 @@
-import keras_rcnn.backend
+import keras.backend
 import numpy
 import numpy.testing
-import keras
-import keras.backend
+
+import keras_rcnn.backend
+
 
 def test_anchor():
-    x = keras.backend.variable(numpy.array(
+    x = numpy.array(
       [[ -84.,  -40.,  99.,  55.],
        [-176.,  -88., 191., 103.],
        [-360., -184., 375., 199.],
@@ -15,17 +16,17 @@ def test_anchor():
        [ -36.,  -80.,  51.,  95.],
        [ -80., -168.,  95., 183.],
        [-168., -344., 183., 359.]]
-    ))
+    )
+
+    x = keras.backend.variable(x)
+
     y = keras_rcnn.backend.anchor()
-    assert keras.backend.eval(keras.backend.all(keras.backend.equal(keras.backend.eval(x), keras.backend.eval(y))))
+
+    x = keras.backend.eval(x)
+    y = keras.backend.eval(y)
+
+    numpy.testing.assert_array_equal(x, y)
+
 
 def test_clip():
     pass
-
-
-def bbox_transform():
-    pass
-
-
-
-
