@@ -334,7 +334,9 @@ def label(y_true, y_pred, inds_inside):
         
         value = tensorflow.cast(max_overlaps_value < RPN_NEGATIVE_OVERLAP, tensorflow.float32) * 0 + tensorflow.cast(max_overlaps_value >= RPN_NEGATIVE_OVERLAP, tensorflow.float32) * -1
         
-        sum_gt_argmax_overlaps_inds = (tensorflow.reduce_sum(tensorflow.cast(tensorflow.equal(tensorflow.cast(gt_argmax_overlaps_inds, tensorflow.int32), tensorflow.cast(i, tensorflow.int32)), tensorflow.float32))) value = tensorflow.cast(sum_gt_argmax_overlaps_inds > 0, tensorflow.float32) * 1 + tensorflow.cast(sum_gt_argmax_overlaps_inds == 0, tensorflow.float32) * value
+        sum_gt_argmax_overlaps_inds = (tensorflow.reduce_sum(tensorflow.cast(tensorflow.equal(tensorflow.cast(gt_argmax_overlaps_inds, tensorflow.int32), tensorflow.cast(i, tensorflow.int32)), tensorflow.float32)))
+
+        value = tensorflow.cast(sum_gt_argmax_overlaps_inds > 0, tensorflow.float32) * 1 + tensorflow.cast(sum_gt_argmax_overlaps_inds == 0, tensorflow.float32) * value
         
         value = tensorflow.cast(max_overlaps_value >= RPN_POSITIVE_OVERLAP, tensorflow.float32) * 1 + tensorflow.cast(max_overlaps_value < RPN_POSITIVE_OVERLAP, tensorflow.float32) * value
         
